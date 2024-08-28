@@ -6,30 +6,30 @@ from torch.fft import fft, ifft, fftshift
 from scipy.interpolate import interp1d
 from tqdm import trange
 
-def get_drift_matrix(ops, dshift):
-    """ for a given dshift drift, computes the linear drift matrix for interpolation
-    """
+# def get_drift_matrix(ops, dshift):
+#     """ for a given dshift drift, computes the linear drift matrix for interpolation
+#     """
 
-    # first, interpolate drifts to every channel
-    yblk = ops['yblk'] #1-D array; dshift should be N-D array, interpolated along last axis
-    finterp = interp1d(yblk, dshift, fill_value="extrapolate", kind = 'linear')
-    shifts = finterp(ops['probe']['yc'])
+#     # first, interpolate drifts to every channel
+#     yblk = ops['yblk'] #1-D array; dshift should be N-D array, interpolated along last axis
+#     finterp = interp1d(yblk, dshift, fill_value="extrapolate", kind = 'linear')
+#     shifts = finterp(ops['probe']['yc'])
 
-    # compute coordinates of desired interpolation
-    xp = np.vstack((ops['probe']['xc'],ops['probe']['yc'])).T
-    yp = xp.copy()
-    yp[:,1] -= shifts
+#     # compute coordinates of desired interpolation
+#     xp = np.vstack((ops['probe']['xc'],ops['probe']['yc'])).T
+#     yp = xp.copy()
+#     yp[:,1] -= shifts
 
-    xp = torch.from_numpy(xp).to(dev)
-    yp = torch.from_numpy(yp).to(dev)
+#     xp = torch.from_numpy(xp).to(dev)
+#     yp = torch.from_numpy(yp).to(dev)
 
-    # run interpolated to obtain a kernel
-    Kyx = preprocessing.kernel2D_torch(yp, xp, ops['settings']['sig_interp'])
+#     # run interpolated to obtain a kernel
+#     Kyx = preprocessing.kernel2D_torch(yp, xp, ops['settings']['sig_interp'])
     
-    # multiply with precomputed kernel matrix of original channels
-    M = Kyx @ ops['iKxx']
+#     # multiply with precomputed kernel matrix of original channels
+#     M = Kyx @ ops['iKxx']
 
-    return M
+#     return M
 
 def load_transform(filename, ibatch, ops, fwav=None, Wrot = None, dshift = None) :
     """ this function loads a batch of data ibatch and optionally:
