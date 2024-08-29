@@ -6,31 +6,6 @@ from torch.fft import fft, ifft, fftshift
 from scipy.interpolate import interp1d
 from tqdm import trange
 
-# def get_drift_matrix(ops, dshift):
-#     """ for a given dshift drift, computes the linear drift matrix for interpolation
-#     """
-
-#     # first, interpolate drifts to every channel
-#     yblk = ops['yblk'] #1-D array; dshift should be N-D array, interpolated along last axis
-#     finterp = interp1d(yblk, dshift, fill_value="extrapolate", kind = 'linear')
-#     shifts = finterp(ops['probe']['yc'])
-
-#     # compute coordinates of desired interpolation
-#     xp = np.vstack((ops['probe']['xc'],ops['probe']['yc'])).T
-#     yp = xp.copy()
-#     yp[:,1] -= shifts
-
-#     xp = torch.from_numpy(xp).to(dev)
-#     yp = torch.from_numpy(yp).to(dev)
-
-#     # run interpolated to obtain a kernel
-#     Kyx = preprocessing.kernel2D_torch(yp, xp, ops['settings']['sig_interp'])
-    
-#     # multiply with precomputed kernel matrix of original channels
-#     M = Kyx @ ops['iKxx']
-
-#     return M
-
 def load_transform(filename, ibatch, ops, fwav=None, Wrot = None, dshift = None) :
     """ this function loads a batch of data ibatch and optionally:
      - if chanMap is present, then the channels are subsampled
@@ -147,15 +122,15 @@ def avg_wav(filename, Wsub, nn, ops, ibatch, st_i, clu, Nfilt):
 
 def clu_ypos(filename, ops, st_i, clu):
     """
-    FUNCTION DESCRIPTION
+    Finds the y position of clusters
     Args: 
-        filename (str): 
+        filename (str): location of the binary file
         ops (dict): operational parameters. nwaves, Nchan, and Nbatches must be defined.
         st_i ([int]): list of spike times
         clu ([int]): cluster labels for identified spikes
     Returns: 
         yclu (TODO datatype): y location of each identified cluster
-        Wsub (TODO datatype idc): average waveform for each identified cluster
+        Wsub (TODO datatype): average waveform for each identified cluster
     """
     Nfilt = clu.max()+1
     Wsub = torch.zeros((Nfilt, ops['nwaves'], ops['Nchan']), device = dev) #accumulates average waveform for each cluster
@@ -174,6 +149,18 @@ def clu_ypos(filename, ops, st_i, clu):
     return yclu, Wsub
 
 def nmatch(ss0, ss, dt=6):
+    """
+    pairwise matching of spikes based on time differential. 
+    Usage assumes spikes are already matched by y position.
+    Args:
+        ss0 ([int]): detected spike times for a single unit
+        ss ([int]): ground truth spike times for a single unit
+        dt (int): time tolerance for declaring a spike matched
+    Returns: 
+        n0 (int): number of matches
+        is_matched ([int]): binary array that stores 1 if a ground truth spike was successfully matched, 0 else
+        is_matched0 ([int]): binary array that stores 1 if a detected spike was successfully matched, 0 else
+    """
     i = 0
     j = 0
     n0 = 0
@@ -196,27 +183,30 @@ def nmatch(ss0, ss, dt=6):
 
 def match_neuron(kk, clu, yclu, st_i, clu0, yclu0, st0_i, n_check=20, dt=6):
     """
-    FUNCTION DESCRIPTION
+    Match detected neurons to a given ground truth unit. Detected neurons are first sorted by 
+    spatial proximity to the ground truth neuron, then by spike times. 
     Args: 
-        kk
-        clu
-        yclu
-        st_i
-        clu0
-        yclu0
-        st0_i
-        n_check
-        dt=6
+        kk (int): ground truth cluster index
+        clu ([int]): ground truth cluster labels
+        yclu ([float]): ground truth y position for clusters
+        st_i ([int]): ground truth spike times
+        clu0 ([int]): detected cluster labels
+        yclu0 ([float]): detected y position for clusters
+        st0_i ([int]): detected spike times
+        n_check (int=20): number of detected spike clusters to compare to each ground truth clusters
+        dt (int=6): allowable time offset to match spikes
     Returns:
-        fmax
-        fmiss
-        fpos
-        best_ind
-        matched_all
-        top_inds
+        fmax ([0 < float < 1]): 1 - (fmiss + fpos)
+        fmiss ([0 < float < 1]): the proportion of ground truth spikes missed
+        fpos ([0 < float < 1]): the proportion of spikes incorrectly assigned to the gt cluster
+        best_ind ([int]): detected cluster labels that best match gt clusters, 1:1 mapping
+        matched_all ([int]): number of spikes in top 20 clusters that match the ground truth
+            **NB - because nmatch uses pairwise, rather than holistic, comparison, this will often be >  
+            the number of spikes in the ground truth cluster
+        top_inds ([int]): the cluster labels for the matched_all list
     """
-    ss = st_i[clu==kk]
-    isort = np.argsort(np.abs(yclu[kk] - yclu0))
+    ss = st_i[clu==kk] #get all gt spike times assigned to cluster kk
+    isort = np.argsort(np.abs(yclu[kk] - yclu0)) #sort calculated clusters by distance to gt ypos
     fmax = 0
     miss = 0
     fpos = 0
@@ -230,11 +220,11 @@ def match_neuron(kk, clu, yclu, st_i, clu0, yclu0, st0_i, n_check=20, dt=6):
 
         if len(ss0) ==0:
             continue
-        
-        n0, is_matched, is_matched0 = nmatch(ss0, ss, dt=dt)
+        #NB pairwise comparison rather than holistic means some gt spikes are counted >1 time meaning sum (matched_all) > gt spikes - weird!
+        n0, is_matched, is_matched0 = nmatch(ss0, ss, dt=dt) #match spikes by time - n0 = # matched spikes per cluster, is_matched = array of 1 or 0
 
         #fmax_new = n0 / (len(ss) + len(ss0) - n0)
-        fmax_new = 1 - np.maximum(0, 1 - n0/len(ss)) - np.maximum(0, 1 - n0/len(ss0))
+        fmax_new = 1 - np.maximum(0, 1 - n0/len(ss)) - np.maximum(0, 1 - n0/len(ss0)) #TODO why are they sometimes zero?
         matched_all[j] = n0
 
         if fmax_new > fmax:
@@ -252,17 +242,19 @@ def compare_recordings(st_gt, clu_gt, yclu_gt, st_new, clu_new, yclu_new):
     Args:
         st_gt ([int]): the ground truth spike times
         clu_gt ([int]): the cluster labels for each identified spike
-        yclu_gt ([float32]): 
+        yclu_gt ([float32]): ground truth y positions of each cluster
         st_new ([int]): the spike times output by the sorter
         clu_new ([int]): the cluster labels for each identified spike
-        yclu_new ([float32]): 
+        yclu_new ([float32]): detected y positions of each cluster
     Returns: 
-        fmax ([float64])
-        fmiss ([float64])
-        fpos ([float64])
-        best_ind ([int])
-        matched_all ([[float64]])
-        top_inds ([[int]])
+        fmax ([float64]): best matching scores for all ground truth neurons - 1 - (false negatives + false positives) OR ZERO????
+        fmiss ([float64]): miss rates for all ground truth neurons - false negatives
+        fpos ([float64]): false positive rate for all ground truth neurons - false positives
+        best_ind ([int]): indices of the best-matching clusters for all ground-truth neurons
+        matched_all ([int]): number of spikes in top 20 clusters that match the ground truth
+            **NB - because nmatch uses pairwise, rather than holistic, comparison, this will often be >  
+            the number of spikes in the ground truth cluster
+        top_inds ([int]): the cluster labels for the matched_all list
     """
     
     NN = len(yclu_gt)
@@ -293,10 +285,10 @@ def load_GT(filename, ops, gt_path, toff = 20, nmax = 600):
     Returns:
         st_gt ([int64]): ground truth spike times
         clu_gt ([int64]): ground truth cluster labels for each spike
-        yclu_gt
-        mu_gt
-        Wsub
-        nsp
+        ? yclu_gt ([int64]): y locations for each cluster
+        ? mu_gt: multiunit clusters
+        ? Wsub: average waveforms for each cluster
+        ? nsp: number of spikes in each cluster
     """
     #gt_path = os.path.join(ops['data_folder'] , "sim.imec0.ap_params.npz")
     dd = np.load(gt_path, allow_pickle = True)
