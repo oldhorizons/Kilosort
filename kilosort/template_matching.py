@@ -15,6 +15,19 @@ def prepare_extract(ops, U, nC, device=torch.device('cuda')):
     return iCC, iU, Ucc
 
 def extract(ops, bfile, U, device=torch.device('cuda'), progress_bar=None):
+    """
+    FUNCTION DESCRIPTION
+    Args: 
+        ops
+        bfile
+        U
+        device (optional)
+        progress_bar (optional)
+    Returns:
+        st
+        tf
+        ops
+    """
     nC = ops['settings']['nearest_chans']
     iCC, iU, Ucc = prepare_extract(ops, U, nC, device=device)
     ops['iCC'] = iCC

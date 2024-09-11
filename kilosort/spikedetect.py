@@ -1,6 +1,7 @@
 from io import StringIO
 import logging
 logger = logging.getLogger(__name__)
+from pathlib import Path
 
 from torch.nn.functional import max_pool2d, avg_pool2d, conv1d, max_pool1d
 import numpy as np
@@ -8,6 +9,7 @@ import torch
 from sklearn.cluster import KMeans
 from sklearn.decomposition import TruncatedSVD
 from tqdm import tqdm
+import pickle
 
 from kilosort.utils import template_path
 
@@ -48,7 +50,7 @@ def extract_snippets(X, nt, twav_min, Th_single_ch, loc_range=[4,5],
     return clips
 
 def extract_wPCA_wTEMP(ops, bfile, nt=61, twav_min=20, Th_single_ch=6, nskip=25,
-                       device=torch.device('cuda')):
+                       device=torch.device('cuda'), results_dir=None):
 
     clips = np.zeros((500000,nt), 'float32')
     i = 0
@@ -69,8 +71,12 @@ def extract_wPCA_wTEMP(ops, bfile, nt=61, twav_min=20, Th_single_ch=6, nskip=25,
     clips = clips[:i]
     clips /= (clips**2).sum(1, keepdims=True)**.5
 
-    model = TruncatedSVD(n_components=ops['settings']['n_pcs']).fit(clips)
-    wPCA = torch.from_numpy(model.components_).to(device).float()
+    svd_model = TruncatedSVD(n_components=ops['settings']['n_pcs']).fit(clips)
+    wPCA = torch.from_numpy(svd_model.components_).to(device).float()
+
+    if results_dir != None:
+        with open(results_dir / "pca_model.pkl", "wb") as f:
+            pickle.dump(svd_model, f)
 
     model = KMeans(n_clusters=ops['settings']['n_templates'], n_init = 10).fit(clips)
     wTEMP = torch.from_numpy(model.cluster_centers_).to(device).float()
@@ -122,6 +128,20 @@ def template_centers(ops):
 
 
 def template_match(X, ops, iC, iC2, weigh, device=torch.device('cuda')):
+    """
+    Args:
+        X (tensor[[float]]): raw data sorted into channels??
+        ops (dict): options dict
+        iC (tensor[[int]]):
+        iC2 (tensor[[int]]):
+        weigh (tensor[[[float]]]): 
+        device (optional): torch device to use
+    Returns:
+        xy
+        imax
+        amp
+        adist
+    """
     NT = X.shape[-1]
     nt = ops['nt']
     Nchan = ops['Nchan']
@@ -195,7 +215,7 @@ def yweighted(yc, iC, adist, xy, device=torch.device('cuda')):
     return yct
 
 def run(ops, bfile, device=torch.device('cuda'), progress_bar=None,
-        clear_cache=False):        
+        clear_cache=False, results_dir=None):        
     sig = ops['settings']['min_template_size']
     nsizes = ops['settings']['template_sizes'] 
 
@@ -205,7 +225,7 @@ def run(ops, bfile, device=torch.device('cuda'), progress_bar=None,
         ops['wPCA'], ops['wTEMP'] = extract_wPCA_wTEMP(
             ops, bfile, nt=ops['nt'], twav_min=ops['nt0min'], 
             Th_single_ch=ops['settings']['Th_single_ch'], nskip=25,
-            device=device
+            device=device, results_dir=results_dir
             )
     else:
         logger.info('Using built-in universal templates.')

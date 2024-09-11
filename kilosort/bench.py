@@ -314,7 +314,7 @@ def convert_ks_output(filename, ops, st, clu, toff = 20):
     """
     note that kilosort output ops doesn't include 'nwaves', which is necessary
     to run this function. nwaves should be 6. No idea why.
-    Pretty sure st is spike times but they indexed it stupid lmao
+    Pretty sure st is spike times
     """
     st = st[:].astype('int64')        
     yclu, Wsub    = clu_ypos(filename, ops, st-toff, clu)

@@ -217,7 +217,7 @@ def run_kilosort(settings, probe=None, probe_name=None, filename=None,
         # Sort spikes and save results
         st,tF, _, _ = detect_spikes(
             ops, device, bfile, tic0=tic0, progress_bar=progress_bar,
-            clear_cache=clear_cache
+            clear_cache=clear_cache, results_dir=results_dir
             )
         clu, Wall = cluster_spikes(
             st, tF, ops, device, bfile, tic0=tic0, progress_bar=progress_bar,
@@ -541,7 +541,7 @@ def compute_drift_correction(ops, device, tic0=np.nan, progress_bar=None,
 
 
 def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
-                  clear_cache=False):
+                  clear_cache=False, results_dir=None):
     """Detect spikes via template deconvolution.
     
     Parameters
@@ -580,7 +580,7 @@ def detect_spikes(ops, device, bfile, tic0=np.nan, progress_bar=None,
     logger.info('-'*40)
     st0, tF, ops = spikedetect.run(
         ops, bfile, device=device, progress_bar=progress_bar,
-        clear_cache=clear_cache
+        clear_cache=clear_cache, results_dir=results_dir
         )
     tF = torch.from_numpy(tF)
     logger.info(f'{len(st0)} spikes extracted in {time.time()-tic : .2f}s; ' + 
